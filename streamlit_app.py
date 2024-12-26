@@ -1,7 +1,7 @@
 import streamlit as st
 import xml.etree.ElementTree as ET
 import pandas as pd
-import pulp as pu
+#import pulp as pu
 import io
 
 def parse_xml_file(xml_content):
