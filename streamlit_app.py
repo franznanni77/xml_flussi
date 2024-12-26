@@ -2,14 +2,6 @@ import streamlit as st
 import xml.etree.ElementTree as ET
 import pandas as pd
 import io
-import locale
-
-# Imposta il locale per il formato numerico europeo
-locale.setlocale(locale.LC_ALL, 'it_IT.UTF-8')
-
-def format_amount(amount):
-    """Formatta l'importo in stile europeo: senza separatore migliaia, virgola per decimali"""
-    return f"{amount:.2f}".replace('.', ',')
 
 def parse_xml_file(xml_content):
     # Parse XML
@@ -23,24 +15,20 @@ def parse_xml_file(xml_content):
     for transaction in root.findall('.//cbi:CdtTrfTxInf', ns):
         destinatario = transaction.find('.//cbi:Cdtr/cbi:Nm', ns).text
         iban = transaction.find('.//cbi:CdtrAcct/cbi:Id/cbi:IBAN', ns).text
-        importo = float(transaction.find('.//cbi:InstdAmt', ns).text)
+        importo = transaction.find('.//cbi:InstdAmt', ns).text
         causale = transaction.find('.//cbi:RmtInf/cbi:Ustrd', ns).text
         
         transactions.append({
             'Destinatario': destinatario,
             'IBAN': iban,
-            'Importo': format_amount(importo),
+            'Importo': float(importo),
             'Causale': causale
         })
     
     return pd.DataFrame(transactions)
 
 def export_to_csv(df):
-    return df.to_csv(index=False, sep=';').encode('utf-8-sig')
-
-def reset_app():
-    st.session_state.clear()
-    st.experimental_rerun()
+    return df.to_csv(index=False).encode('utf-8')
 
 def reset_app():
     st.session_state.clear()
