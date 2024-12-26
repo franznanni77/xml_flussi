@@ -30,31 +30,43 @@ def parse_xml_file(xml_content):
 def export_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
+def reset_app():
+    st.session_state.clear()
+    st.experimental_rerun()
+
 def main():
     st.title("Parser Bonifici XML")
     
+    # Initialize session state for the DataFrame if it doesn't exist
+    if 'df' not in st.session_state:
+        st.session_state.df = None
+        
     # File upload
     uploaded_file = st.file_uploader("Carica il file XML dei bonifici", type=['xml'])
+    
+    # Clear button in the sidebar
+    if st.sidebar.button("Pulisci Tutto"):
+        reset_app()
     
     if uploaded_file is not None:
         try:
             # Read and parse XML
             xml_content = uploaded_file.read().decode('utf-8')
-            df = parse_xml_file(xml_content)
+            st.session_state.df = parse_xml_file(xml_content)
             
             # Column visibility toggles
             st.sidebar.header("Visualizza Colonne")
             columns_to_show = []
-            for column in df.columns:
-                if st.sidebar.checkbox(column, value=True):
+            for column in st.session_state.df.columns:
+                if st.sidebar.checkbox(column, value=True, key=f"col_{column}"):
                     columns_to_show.append(column)
             
             # Display filtered DataFrame
             if columns_to_show:
-                st.dataframe(df[columns_to_show])
+                st.dataframe(st.session_state.df[columns_to_show])
                 
                 # Export to CSV button
-                csv = export_to_csv(df[columns_to_show])
+                csv = export_to_csv(st.session_state.df[columns_to_show])
                 st.download_button(
                     label="Scarica CSV",
                     data=csv,
