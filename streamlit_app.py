@@ -42,6 +42,10 @@ def reset_app():
     st.session_state.clear()
     st.experimental_rerun()
 
+def reset_app():
+    st.session_state.clear()
+    st.experimental_rerun()
+
 def main():
     st.title("Parser Bonifici XML")
     
