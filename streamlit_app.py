@@ -10,6 +10,9 @@ def parse_xml_file(xml_content):
     # Define namespace
     ns = {'cbi': 'urn:CBI:xsd:CBIPaymentRequest.00.04.01'}
     
+    # Extract company info
+    company_name = root.find('.//cbi:InitgPty/cbi:Nm', ns).text
+    
     # Extract transactions
     transactions = []
     for transaction in root.findall('.//cbi:CdtTrfTxInf', ns):
@@ -25,7 +28,7 @@ def parse_xml_file(xml_content):
             'Causale': causale
         })
     
-    return pd.DataFrame(transactions)
+    return pd.DataFrame(transactions), company_name
 
 def export_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
@@ -40,7 +43,10 @@ def main():
         try:
             # Read and parse XML
             xml_content = uploaded_file.read().decode('utf-8')
-            df = parse_xml_file(xml_content)
+            df, company_name = parse_xml_file(xml_content)
+            
+            # Display company info
+            st.subheader(f"Società ordinante: {company_name}")
             
             # Column visibility toggles
             st.sidebar.header("Visualizza Colonne")
@@ -51,10 +57,22 @@ def main():
             
             # Display filtered DataFrame
             if columns_to_show:
-                st.dataframe(df[columns_to_show])
+                # Create a copy of the filtered DataFrame
+                display_df = df[columns_to_show].copy()
+                
+                # Calculate total if 'Importo' is in the shown columns
+                if 'Importo' in columns_to_show:
+                    total_row = pd.DataFrame([{
+                        col: 'TOTALE' if col == 'Destinatario' else 
+                             df['Importo'].sum() if col == 'Importo' else ''
+                        for col in columns_to_show
+                    }])
+                    display_df = pd.concat([display_df, total_row], ignore_index=True)
+                
+                st.dataframe(display_df)
                 
                 # Export to CSV button
-                csv = export_to_csv(df[columns_to_show])
+                csv = export_to_csv(df[columns_to_show])  # Export without total row
                 st.download_button(
                     label="Scarica CSV",
                     data=csv,
