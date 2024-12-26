@@ -30,19 +30,86 @@ def parse_xml_file(xml_content):
 def export_to_csv(df):
     return df.to_csv(index=False, sep=';').encode('utf-8-sig')
 
-def export_to_txt(df):
-    buffer = io.StringIO()
+def export_to_pdf(df):
+    buffer = io.BytesIO()
     
-    # Write header
-    header = '\t'.join(df.columns)
-    buffer.write(header + '\n')
-    buffer.write('-' * len(header) * 2 + '\n')  # Separator line
+    # PDF Header
+    buffer.write(b'%PDF-1.4\n')
     
-    # Write data
+    # Create a simple text stream
+    text = "Elenco Bonifici\n\n"
+    
+    # Add header
+    text += " | ".join(df.columns) + "\n"
+    text += "-" * 80 + "\n"
+    
+    # Add data
     for _, row in df.iterrows():
-        buffer.write('\t'.join(str(item) for item in row) + '\n')
+        text += " | ".join(str(item) for item in row) + "\n"
     
-    return buffer.getvalue().encode('utf-8')
+    # Write content
+    content = f"""
+1 0 obj
+<< /Type /Catalog
+   /Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<< /Type /Pages
+   /Kids [3 0 R]
+   /Count 1
+>>
+endobj
+
+3 0 obj
+<< /Type /Page
+   /Parent 2 0 R
+   /Resources << /Font << /F1 4 0 R >> >>
+   /MediaBox [0 0 595 842]
+   /Contents 5 0 R
+>>
+endobj
+
+4 0 obj
+<< /Type /Font
+   /Subtype /Type1
+   /BaseFont /Courier
+>>
+endobj
+
+5 0 obj
+<< /Length {len(text)} >>
+stream
+BT
+/F1 10 Tf
+50 750 Td
+({text}) Tj
+ET
+endstream
+endobj
+
+xref
+0 6
+0000000000 65535 f
+0000000010 00000 n
+0000000060 00000 n
+0000000120 00000 n
+0000000250 00000 n
+0000000330 00000 n
+
+trailer
+<< /Size 6
+   /Root 1 0 R
+>>
+startxref
+480
+%%EOF
+"""
+    
+    buffer.write(content.encode('utf-8'))
+    buffer.seek(0)
+    return buffer
 
 def reset_app():
     st.session_state.clear()
@@ -80,7 +147,7 @@ def main():
                 st.dataframe(st.session_state.df[columns_to_show])
                 
                 # Container for export buttons
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 
                 # Export to CSV button
                 with col1:
@@ -92,14 +159,14 @@ def main():
                         mime="text/csv"
                     )
                 
-                # Export to TXT button
+                # Export to PDF button
                 with col2:
-                    txt = export_to_txt(st.session_state.df[columns_to_show])
+                    pdf = export_to_pdf(st.session_state.df[columns_to_show])
                     st.download_button(
-                        label="Scarica TXT",
-                        data=txt,
-                        file_name="bonifici.txt",
-                        mime="text/plain"
+                        label="Scarica PDF",
+                        data=pdf,
+                        file_name="bonifici.pdf",
+                        mime="application/pdf"
                     )
             else:
                 st.warning("Seleziona almeno una colonna da visualizzare")
