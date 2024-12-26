@@ -15,20 +15,34 @@ def parse_xml_file(xml_content):
     for transaction in root.findall('.//cbi:CdtTrfTxInf', ns):
         destinatario = transaction.find('.//cbi:Cdtr/cbi:Nm', ns).text
         iban = transaction.find('.//cbi:CdtrAcct/cbi:Id/cbi:IBAN', ns).text
-        importo = transaction.find('.//cbi:InstdAmt', ns).text
+        importo = float(transaction.find('.//cbi:InstdAmt', ns).text)
         causale = transaction.find('.//cbi:RmtInf/cbi:Ustrd', ns).text
         
         transactions.append({
             'Destinatario': destinatario,
             'IBAN': iban,
-            'Importo': float(importo),
+            'Importo': importo,
             'Causale': causale
         })
     
     return pd.DataFrame(transactions)
 
 def export_to_csv(df):
-    return df.to_csv(index=False).encode('utf-8')
+    return df.to_csv(index=False, sep=';').encode('utf-8-sig')
+
+def export_to_txt(df):
+    buffer = io.StringIO()
+    
+    # Write header
+    header = '\t'.join(df.columns)
+    buffer.write(header + '\n')
+    buffer.write('-' * len(header) * 2 + '\n')  # Separator line
+    
+    # Write data
+    for _, row in df.iterrows():
+        buffer.write('\t'.join(str(item) for item in row) + '\n')
+    
+    return buffer.getvalue().encode('utf-8')
 
 def reset_app():
     st.session_state.clear()
@@ -65,14 +79,28 @@ def main():
             if columns_to_show:
                 st.dataframe(st.session_state.df[columns_to_show])
                 
+                # Container for export buttons
+                col1, col2 = st.columns(2)
+                
                 # Export to CSV button
-                csv = export_to_csv(st.session_state.df[columns_to_show])
-                st.download_button(
-                    label="Scarica CSV",
-                    data=csv,
-                    file_name="bonifici.csv",
-                    mime="text/csv"
-                )
+                with col1:
+                    csv = export_to_csv(st.session_state.df[columns_to_show])
+                    st.download_button(
+                        label="Scarica CSV",
+                        data=csv,
+                        file_name="bonifici.csv",
+                        mime="text/csv"
+                    )
+                
+                # Export to TXT button
+                with col2:
+                    txt = export_to_txt(st.session_state.df[columns_to_show])
+                    st.download_button(
+                        label="Scarica TXT",
+                        data=txt,
+                        file_name="bonifici.txt",
+                        mime="text/plain"
+                    )
             else:
                 st.warning("Seleziona almeno una colonna da visualizzare")
                 
