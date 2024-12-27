@@ -5,97 +5,128 @@ import pandas as pd
 import io
 
 def parse_xml_file(xml_content):
-    # Parse XML
+    """
+    Legge il contenuto di un file XML in formato pain.001.001.03
+    ed estrae le informazioni dei bonifici (CdtTrfTxInf).
+    
+    Restituisce:
+    - DataFrame con colonne [Data, Destinatario, IBAN, Importo, Causale]
+    - Nome della società ordinante (company_name)
+    """
+    
     root = ET.fromstring(xml_content)
     
-    # Define namespace
-    ns = {'cbi': 'urn:CBI:xsd:CBIPaymentRequest.00.04.01'}
+    # Namespace "urn:iso:std:iso:20022:tech:xsd:pain.001.001.03"
+    ns = {'iso': 'urn:iso:std:iso:20022:tech:xsd:pain.001.001.03'}
     
-    # Extract company info
-    company_name = root.find('.//cbi:InitgPty/cbi:Nm', ns).text
+    # 1) Società ordinante
+    company_name_node = root.find('.//iso:CstmrCdtTrfInitn/iso:GrpHdr/iso:InitgPty/iso:Nm', ns)
+    company_name = company_name_node.text if company_name_node is not None else 'SOCIETÀ NON TROVATA'
     
-    # Extract transactions
+    # 2) Data di esecuzione (valida per tutti i bonifici in questo XML)
+    exec_date_node = root.find('.//iso:CstmrCdtTrfInitn/iso:PmtInf/iso:ReqdExctnDt', ns)
+    data_bonifico = exec_date_node.text if exec_date_node is not None else ''
+    
+    # 3) Trova tutte le transazioni (CdtTrfTxInf)
     transactions = []
-    for transaction in root.findall('.//cbi:CdtTrfTxInf', ns):
-        destinatario = transaction.find('.//cbi:Cdtr/cbi:Nm', ns).text
-        iban = transaction.find('.//cbi:CdtrAcct/cbi:Id/cbi:IBAN', ns).text
-        importo = transaction.find('.//cbi:InstdAmt', ns).text
-        causale = transaction.find('.//cbi:RmtInf/cbi:Ustrd', ns).text
-        # Data di esecuzione
-        data_bonifico = root.find('.//cbi:ReqdExctnDt/cbi:Dt', ns).text
+    for transaction in root.findall('.//iso:CstmrCdtTrfInitn/iso:PmtInf/iso:CdtTrfTxInf', ns):
+        
+        # Destinatario
+        destinatario_node = transaction.find('.//iso:Cdtr/iso:Nm', ns)
+        destinatario = destinatario_node.text if destinatario_node is not None else ''
+        
+        # IBAN
+        iban_node = transaction.find('.//iso:CdtrAcct/iso:Id/iso:IBAN', ns)
+        iban = iban_node.text if iban_node is not None else ''
+        
+        # Importo (sotto <Amt><InstdAmt>)
+        importo_node = transaction.find('.//iso:Amt/iso:InstdAmt', ns)
+        importo_text = importo_node.text if importo_node is not None else '0'
+        # Assicuriamoci di convertire stringa in float
+        importo = float(importo_text.replace(',', '.'))
+        
+        # Causale (RmtInf -> Ustrd)
+        causale_node = transaction.find('.//iso:RmtInf/iso:Ustrd', ns)
+        causale = causale_node.text if causale_node is not None else ''
         
         transactions.append({
             'Data': data_bonifico,
             'Destinatario': destinatario,
             'IBAN': iban,
-            'Importo': float(importo),
+            'Importo': importo,
             'Causale': causale
         })
     
-    # Crea il DataFrame a partire dalla lista di dizionari
-    df = pd.DataFrame(transactions)
-    
-    # Ritorna anche il nome dell'azienda (società ordinante)
-    return df, company_name
+    return pd.DataFrame(transactions), company_name
 
 def export_to_csv(df):
+    """
+    Converte un DataFrame Pandas in CSV (UTF-8),
+    restituendo i dati binari pronti per il download.
+    """
     return df.to_csv(index=False).encode('utf-8')
 
 def main():
-    st.title("Parser Bonifici XML")
+    st.title("Parser Bonifici XML (pain.001.001.03)")
     
-    # File upload - ora accetta più file
-    uploaded_files = st.file_uploader("Carica uno o più file XML dei bonifici", type=['xml'], accept_multiple_files=True)
+    # File upload - accetta più file .xml
+    uploaded_files = st.file_uploader(
+        "Carica uno o più file XML dei bonifici (pain.001.001.03)", 
+        type=['xml'], 
+        accept_multiple_files=True
+    )
     
     if uploaded_files:
         try:
             # Lista per contenere tutti i DataFrame
             all_dfs = []
+            # Set per elencare le diverse società ordinanti
             companies = set()
             
-            # Processa ogni file
+            # Processa ogni file caricato
             for uploaded_file in uploaded_files:
                 xml_content = uploaded_file.read().decode('utf-8')
                 df, company_name = parse_xml_file(xml_content)
                 
-                # Aggiunge la colonna "Società Ordinante"
-                # in modo che appaia in ogni riga relativa al file corrente
+                # Aggiungiamo la colonna "Società Ordinante" a ogni riga di questo DataFrame
                 df['Società Ordinante'] = company_name
                 
+                # Uniamo il DF alla lista
                 all_dfs.append(df)
+                # Aggiungiamo il nome dell'azienda al set
                 companies.add(company_name)
             
-            # Concatena tutti i DataFrame
+            # Unisce tutti i DataFrame in uno solo
             combined_df = pd.concat(all_dfs, ignore_index=True)
             
-            # Mostra le società coinvolte
+            # Visualizzazione delle società ordinanti
             st.subheader("Società ordinanti:")
             for company in companies:
                 st.write(f"- {company}")
             
-            # Column visibility toggles
+            # Sidebar per selezionare quali colonne visualizzare
             st.sidebar.header("Visualizza Colonne")
             columns_to_show = []
-            
-            # Quando settiamo i checkbox, vogliamo che "Società Ordinante" sia di default non selezionata.
             for column in combined_df.columns:
+                # Di default, tutte le colonne tranne "Società Ordinante" sono selezionate
                 if column == 'Società Ordinante':
-                    # Default = False per questa colonna
+                    # default = False
                     if st.sidebar.checkbox(column, value=False):
                         columns_to_show.append(column)
                 else:
-                    # Default = True per le altre colonne
+                    # default = True per le altre
                     if st.sidebar.checkbox(column, value=True):
                         columns_to_show.append(column)
             
-            # Display filtered DataFrame
+            # Se l'utente ha selezionato almeno una colonna, procedi
             if columns_to_show:
-                # Ordina per data se presente
                 display_df = combined_df[columns_to_show].copy()
+                
+                # Ordina per data se la colonna "Data" è selezionata
                 if 'Data' in columns_to_show:
                     display_df = display_df.sort_values('Data')
                 
-                # Aggiungi riga totale se 'Importo' è presente
+                # Aggiungi riga di totale se la colonna "Importo" è selezionata
                 if 'Importo' in columns_to_show:
                     total_row = pd.DataFrame([{
                         col: 'TOTALE' if col == 'Destinatario' else 
@@ -104,7 +135,7 @@ def main():
                     }])
                     display_df = pd.concat([display_df, total_row], ignore_index=True)
                 
-                # Mostra statistiche
+                # Mostra statistiche rapide
                 col1, col2 = st.columns(2)
                 with col1:
                     st.write(f"Numero totale bonifici: {len(combined_df)}")
@@ -112,12 +143,12 @@ def main():
                     if 'Importo' in columns_to_show:
                         st.write(f"Importo totale: {combined_df['Importo'].sum():.2f}")
                 
-                # Mostra DataFrame
+                # Visualizza la tabella
                 st.dataframe(display_df)
                 
-                # Export to CSV button
-                # Esportiamo i dati senza la riga "TOTALE"
-                csv = export_to_csv(combined_df[columns_to_show])  
+                # Pulsante per scaricare il CSV
+                # Esporta il DataFrame senza la riga di 'TOTALE'
+                csv = export_to_csv(combined_df[columns_to_show])
                 st.download_button(
                     label="Scarica CSV",
                     data=csv,
@@ -125,7 +156,7 @@ def main():
                     mime="text/csv"
                 )
             else:
-                st.warning("Seleziona almeno una colonna da visualizzare")
+                st.warning("Seleziona almeno una colonna da visualizzare.")
                 
         except Exception as e:
             st.error(f"Errore durante l'elaborazione del file: {str(e)}")
