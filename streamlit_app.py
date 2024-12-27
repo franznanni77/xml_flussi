@@ -11,7 +11,7 @@ def parse_xml_file(xml_content):
     # Define namespace
     ns = {'cbi': 'urn:CBI:xsd:CBIPaymentRequest.00.04.01'}
     
-    # Extract company info and execution date
+    # Extract company info
     company_name = root.find('.//cbi:InitgPty/cbi:Nm', ns).text
     
     # Extract transactions
@@ -21,7 +21,7 @@ def parse_xml_file(xml_content):
         iban = transaction.find('.//cbi:CdtrAcct/cbi:Id/cbi:IBAN', ns).text
         importo = transaction.find('.//cbi:InstdAmt', ns).text
         causale = transaction.find('.//cbi:RmtInf/cbi:Ustrd', ns).text
-        # Estrai la data di esecuzione
+        # Data di esecuzione
         data_bonifico = root.find('.//cbi:ReqdExctnDt/cbi:Dt', ns).text
         
         transactions.append({
@@ -32,7 +32,11 @@ def parse_xml_file(xml_content):
             'Causale': causale
         })
     
-    return pd.DataFrame(transactions), company_name
+    # Crea il DataFrame a partire dalla lista di dizionari
+    df = pd.DataFrame(transactions)
+    
+    # Ritorna anche il nome dell'azienda (società ordinante)
+    return df, company_name
 
 def export_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
@@ -53,6 +57,11 @@ def main():
             for uploaded_file in uploaded_files:
                 xml_content = uploaded_file.read().decode('utf-8')
                 df, company_name = parse_xml_file(xml_content)
+                
+                # Aggiunge la colonna "Società Ordinante"
+                # in modo che appaia in ogni riga relativa al file corrente
+                df['Società Ordinante'] = company_name
+                
                 all_dfs.append(df)
                 companies.add(company_name)
             
@@ -67,18 +76,26 @@ def main():
             # Column visibility toggles
             st.sidebar.header("Visualizza Colonne")
             columns_to_show = []
+            
+            # Quando settiamo i checkbox, vogliamo che "Società Ordinante" sia di default non selezionata.
             for column in combined_df.columns:
-                if st.sidebar.checkbox(column, value=True):
-                    columns_to_show.append(column)
+                if column == 'Società Ordinante':
+                    # Default = False per questa colonna
+                    if st.sidebar.checkbox(column, value=False):
+                        columns_to_show.append(column)
+                else:
+                    # Default = True per le altre colonne
+                    if st.sidebar.checkbox(column, value=True):
+                        columns_to_show.append(column)
             
             # Display filtered DataFrame
             if columns_to_show:
-                # Ordina per data
+                # Ordina per data se presente
                 display_df = combined_df[columns_to_show].copy()
                 if 'Data' in columns_to_show:
                     display_df = display_df.sort_values('Data')
                 
-                # Aggiungi riga totale
+                # Aggiungi riga totale se 'Importo' è presente
                 if 'Importo' in columns_to_show:
                     total_row = pd.DataFrame([{
                         col: 'TOTALE' if col == 'Destinatario' else 
@@ -99,7 +116,8 @@ def main():
                 st.dataframe(display_df)
                 
                 # Export to CSV button
-                csv = export_to_csv(combined_df[columns_to_show])  # Export senza riga totale
+                # Esportiamo i dati senza la riga "TOTALE"
+                csv = export_to_csv(combined_df[columns_to_show])  
                 st.download_button(
                     label="Scarica CSV",
                     data=csv,
